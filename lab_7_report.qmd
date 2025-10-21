@@ -4,4 +4,12 @@ format: html
 editor: visual
 ---
 
-## 
+# Gravier data PCA
+
+We do a PCA following directions of Claus O. Wilke
+
+## Data load
+
+```{r}
+
+```
