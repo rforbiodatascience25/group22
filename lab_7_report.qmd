@@ -11,5 +11,22 @@ We do a PCA following directions of Claus O. Wilke
 ## Data load
 
 ```{r}
+#| eval: true
+# Setting up directories
+raw_dir <- "data/_raw/"
+data_file <- "gravier.RData"
+data_loc <- "https://github.com/ramhiser/datamicroarray/raw/master/data/"
 
+#Creating raw directory
+if( !dir.exists(raw_dir) ){
+  dir.create(path = raw_dir)
+}
+
+#Downloading datafile
+if( !file.exists(str_c(raw_dir, data_file)) ){
+  download.file(
+    url = str_c(data_loc, data_file),
+    destfile = str_c(raw_dir, data_file))
+}
+load(file = str_c(raw_dir, data_file))
 ```
