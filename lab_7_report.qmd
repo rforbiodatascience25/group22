@@ -4,18 +4,31 @@ format: html
 editor: visual
 ---
 
-# Gravier data PCA
+# Modeling Gravier data with XGBOOST
 
 We do a PCA following directions of Claus O. Wilke
 
-## Data load
+## Download/import libraries including random forest
+
+```{r}
+library(tidyverse)
+library(broom)
+library(cowplot)
+library(parsnip)
+```
 
 ```{r}
 #| eval: true
 # Setting up directories
+data <- "data/"
 raw_dir <- "data/_raw/"
 data_file <- "gravier.RData"
 data_loc <- "https://github.com/ramhiser/datamicroarray/raw/master/data/"
+
+#Creating raw directory
+if( !dir.exists(data) ){
+  dir.create(path = data)
+}
 
 #Creating raw directory
 if( !dir.exists(raw_dir) ){
@@ -29,4 +42,20 @@ if( !file.exists(str_c(raw_dir, data_file)) ){
     destfile = str_c(raw_dir, data_file))
 }
 load(file = str_c(raw_dir, data_file))
+```
+
+```{r}
+gravier
+```
+
+## Random forest
+
+```{r}
+rand_forest(
+  mode = "classification",
+  engine = "ranger",
+  mtry = NULL,
+  trees = 100,
+  min_n = NULL
+)
 ```
