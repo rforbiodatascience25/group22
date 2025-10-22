@@ -11,10 +11,14 @@ We do a PCA following directions of Claus O. Wilke
 ## Download/import libraries including random forest
 
 ```{r}
+install.packages("ranger")
+```
+
+```{r}
 library(tidyverse)
 library(broom)
-library(cowplot)
 library(parsnip)
+library(yardstick)
 ```
 
 ```{r}
@@ -51,11 +55,56 @@ gravier
 ## Random forest
 
 ```{r}
-rand_forest(
+#define the random forest object
+rand_object <- rand_forest(
   mode = "classification",
   engine = "ranger",
   mtry = NULL,
-  trees = 100,
+  trees = 168,
   min_n = NULL
 )
 ```
+
+```{r}
+#split into train and test
+split <- floor(length(gravier$y) * 0.75)
+train <- list(
+  x = gravier$x[1:split, ],
+  y = gravier$y[1:split]
+)
+
+test <- list(
+  x = gravier$x[(split + 1):length(gravier$y), ],
+  y = gravier$y[(split + 1):length(gravier$y)]
+)
+```
+
+```{r}
+#fit the random forest to the train data
+rand_fit <- rand_object |> 
+  set_engine('ranger') |> 
+  fit_xy(x = train$x,
+         y = train$y)
+```
+
+```{r}
+#predict on the test data
+test_predictions <- predict(rand_fit, test$x, type = "class")
+#calculate accuracy
+accuracy_vec(truth = test$y, estimate = test_predictions$.pred_class)
+```
+
+```{r}
+# let's check the original distribution to see if our random forest did well
+print(sum(test$y == "good")/36*100)
+# That seems quite random
+```
+
+So our random forest model doesn't seem to be able to predict this data very well. That is probably because we have quite few samples
+
+```{r}
+#But let's see the distribution of the training data
+print(sum(train$y == "good")/126*100)
+```
+
+So we see that there is quite a difference between the distribution of "good" vs "poor" labels between our training and testing. We should probably do some cross validation to make sure, but this might be for another time :)
