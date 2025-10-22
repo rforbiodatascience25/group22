@@ -11,14 +11,10 @@ We do a PCA following directions of Claus O. Wilke
 ## Download/import libraries including random forest
 
 ```{r}
-install.packages("ranger")
-```
-
-```{r}
-library(tidyverse)
-library(broom)
-library(parsnip)
-library(yardstick)
+library("tidyverse")
+library("tidymodels")
+library("kernlab")
+library("broom")
 ```
 
 ```{r}
@@ -49,62 +45,66 @@ load(file = str_c(raw_dir, data_file))
 ```
 
 ```{r}
-gravier
+#The data was cleaned and compressed with gzip
+gravier_clean <- gravier |>
+  bind_cols() |>
+  as_tibble() 
+
+write_tsv(gravier_clean, 
+          file = "data/02_gravier_clean.tsv.gz")
+
+gravier_clean <- read_tsv(file = "data/02_gravier_clean.tsv.gz",
+                          show_col_types = FALSE)
 ```
 
-## Random forest
+```{r}
+
+#Augmenting data
+gravier_clean_aug <- gravier_clean |> 
+  relocate(early_metastasis = y)
+
+gravier_scaled <- gravier_clean_aug %>%
+  mutate(across(where(is.numeric), ~ as.numeric(scale(.))))
+
+# Split
+ratio <- 0.75
+split <- as.integer(nrow(gravier_scaled) * ratio)
+
+gravier_train <- gravier_scaled[1:split, ]
+gravier_test  <- gravier_scaled[(split + 1):nrow(gravier_scaled), ]
+
+# Make target a factor
+gravier_train <- gravier_train %>%
+  mutate(early_metastasis = as.factor(early_metastasis))
+
+gravier_test <- gravier_test %>%
+  mutate(early_metastasis = as.factor(early_metastasis))
+
+```
 
 ```{r}
-#define the random forest object
-rand_object <- rand_forest(
+
+svm_spec <- svm_poly(
   mode = "classification",
-  engine = "ranger",
-  mtry = NULL,
-  trees = 168,
-  min_n = NULL
-)
+  cost = tune()  
+) %>%
+  set_engine("kernlab")   
 ```
 
 ```{r}
-#split into train and test
-split <- floor(length(gravier$y) * 0.75)
-train <- list(
-  x = gravier$x[1:split, ],
-  y = gravier$y[1:split]
-)
+svm_model <- svm_rbf(mode = "classification") %>%
+  set_engine("kernlab")
 
-test <- list(
-  x = gravier$x[(split + 1):length(gravier$y), ],
-  y = gravier$y[(split + 1):length(gravier$y)]
-)
+svm_fit <- svm_model %>%
+  fit(early_metastasis ~ ., data = gravier_train)
 ```
 
 ```{r}
-#fit the random forest to the train data
-rand_fit <- rand_object |> 
-  set_engine('ranger') |> 
-  fit_xy(x = train$x,
-         y = train$y)
+svm_preds <- predict(svm_fit, gravier_test) %>%
+  bind_cols(gravier_test)
+svm_preds %>%
+  metrics(truth = early_metastasis, estimate = .pred_class)
+svm_preds %>%
+  conf_mat(truth = early_metastasis, estimate = .pred_class)
+
 ```
-
-```{r}
-#predict on the test data
-test_predictions <- predict(rand_fit, test$x, type = "class")
-#calculate accuracy
-accuracy_vec(truth = test$y, estimate = test_predictions$.pred_class)
-```
-
-```{r}
-# let's check the original distribution to see if our random forest did well
-print(sum(test$y == "good")/36*100)
-# That seems quite random
-```
-
-So our random forest model doesn't seem to be able to predict this data very well. That is probably because we have quite few samples
-
-```{r}
-#But let's see the distribution of the training data
-print(sum(train$y == "good")/126*100)
-```
-
-So we see that there is quite a difference between the distribution of "good" vs "poor" labels between our training and testing. We should probably do some cross validation to make sure, but this might be for another time :)
