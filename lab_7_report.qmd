@@ -2,24 +2,38 @@
 title: "lab_7_report"
 format: html
 editor: visual
+bibliography: references.bib
 ---
 
-# Modeling Gravier data with XGBOOST
+# Group 22, members:
 
-We do a PCA following directions of Claus O. Wilke
+-   Malte Lau (s224183)
 
-## Download/import libraries including random forest
+-   Duco Lam (252126)
+
+-   Benedek Dunavolgyi (s243161)
+
+-   Manuel Charneca (s253708)
+
+# PCA analysis of Gravier dataset
+
+We do a PCA following directions of [Claus O. Wilke](https://clauswilke.com/blog/2020/09/07/pca-tidyverse-style/ "PCA tidyverse style").
+
+## Loading Libraries
 
 ```{r}
-install.packages("ranger")
+#| message: false
+library("tidyverse")
+library("tidymodels")
+library("kernlab")
+library("broom")
 ```
 
-```{r}
-library(tidyverse)
-library(broom)
-library(parsnip)
-library(yardstick)
-```
+## Loading Gravier data
+
+[@gravier2010] have considered small, invasive ductal carcinomas without axillary lymph node involvement (T1T2N0) to predict metastasis of small node-negative breast carcinoma. Using comparative genomic hybridization arrays, they examined 168 patients over a five-year period. The 111 patients with no event after diagnosis were labelled good, and the 57 patients with early metastasis were labelled poor.
+
+We are loading the Gravier dataset, applying compression and augmentation to include the `early_metastasis` data into one dataframe.
 
 ```{r}
 #| eval: true
@@ -46,65 +60,107 @@ if( !file.exists(str_c(raw_dir, data_file)) ){
     destfile = str_c(raw_dir, data_file))
 }
 load(file = str_c(raw_dir, data_file))
+
+#The data was cleaned and compressed with gzip
+gravier_clean <- gravier |>
+  bind_cols() |>
+  as_tibble() 
+
+write_tsv(gravier_clean, 
+          file = "data/02_gravier_clean.tsv.gz")
+
+gravier_clean <- read_tsv(file = "data/02_gravier_clean.tsv.gz",
+                          show_col_types = FALSE)
+
+#Augmenting data
+gravier_clean_aug <- gravier_clean |> 
+  relocate(early_metastasis = y)
 ```
 
+## Data Wrangling
+
+The data was prepared for a Support Vector Machine analysis to determine a model, that can predict the outcome of breast cancer on the gene levels. First, the data was scaled to unity variance, then 3/4 of the data was selected as the `training` data, while the rest is going to be used to test accuracy.
+
 ```{r}
-gravier
+#Scaling for unity variance
+gravier_scaled <- gravier_clean_aug |>
+  mutate(across(where(is.numeric),
+                ~ as.numeric(scale(.))))
+
+# Finding split index
+ratio <- 0.75
+split <- as.integer(nrow(gravier_scaled) * ratio)
+
+# Splitting the data into training and test subsets
+gravier_train <- gravier_scaled[1:split, ]
+gravier_test  <- gravier_scaled[(split + 1):nrow(gravier_scaled), ]
+
+# Changing early_metastasis to factor values
+gravier_train <- gravier_train |>
+  mutate(early_metastasis = as.factor(early_metastasis))
+
+gravier_test <- gravier_test |>
+  mutate(early_metastasis = as.factor(early_metastasis))
 ```
 
-## Random forest
+Then, the `SVM` analysis was set up, using a polynomial vector.
 
 ```{r}
-#define the random forest object
-rand_object <- rand_forest(
+svm_spec <- svm_poly(
   mode = "classification",
-  engine = "ranger",
-  mtry = NULL,
-  trees = 168,
-  min_n = NULL
-)
+  cost = tune()  
+) %>%
+  set_engine("kernlab")   
+
+svm_model <- svm_rbf(mode = "classification") |>
+  set_engine("kernlab")
 ```
+
+The model was then fitted on the `training` subset.
 
 ```{r}
-#split into train and test
-split <- floor(length(gravier$y) * 0.75)
-train <- list(
-  x = gravier$x[1:split, ],
-  y = gravier$y[1:split]
-)
-
-test <- list(
-  x = gravier$x[(split + 1):length(gravier$y), ],
-  y = gravier$y[(split + 1):length(gravier$y)]
-)
+svm_fit <- svm_model |>
+  fit(early_metastasis ~ ., 
+      data = gravier_train)
 ```
+
+Finally, the fitted model was applied on the `test` dataset and the confusion matrix is plotted using `ggplot2`.
 
 ```{r}
-#fit the random forest to the train data
-rand_fit <- rand_object |> 
-  set_engine('ranger') |> 
-  fit_xy(x = train$x,
-         y = train$y)
+#Applying prediction
+svm_preds <- predict(svm_fit, 
+                     gravier_test) |>
+  bind_cols(gravier_test)
+
+#Calculating accuracy
+svm_acc <- svm_preds |>
+  metrics(truth = early_metastasis, 
+          estimate = .pred_class) |>
+    filter(.metric == "accuracy") |>
+      pull(.estimate)
+
+#Calculating confusion matrix
+svm_confusion <- svm_preds |>
+  conf_mat(truth = early_metastasis, 
+           estimate = .pred_class)
+
+#Saving confusion matrix values to a table
+confusion <- table(Predicted = svm_preds$.pred_class, Actual = gravier_test$early_metastasis)
+
+# Convert to tidy format and plot
+conf_df <- as.data.frame(confusion)
+
+#Plotting confusion matrix
+ggplot(conf_df, aes(x = Actual, 
+                    y = Predicted, 
+                    fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = Freq)) +
+  labs(title = "Confusion Matrix - SVM",
+       caption = paste("Accuracy:", round(svm_acc,3)))
+  
 ```
 
-```{r}
-#predict on the test data
-test_predictions <- predict(rand_fit, test$x, type = "class")
-#calculate accuracy
-accuracy_vec(truth = test$y, estimate = test_predictions$.pred_class)
-```
+The confusion matrix shows that the model correctly classified most of the “good” samples but has a higher error with the “poor” ones. This imbalance is likely due to the different distribution of “good” and “poor” labels between the training and testing sets.
 
-```{r}
-# let's check the original distribution to see if our random forest did well
-print(sum(test$y == "good")/36*100)
-# That seems quite random
-```
-
-So our random forest model doesn't seem to be able to predict this data very well. That is probably because we have quite few samples
-
-```{r}
-#But let's see the distribution of the training data
-print(sum(train$y == "good")/126*100)
-```
-
-So we see that there is quite a difference between the distribution of "good" vs "poor" labels between our training and testing. We should probably do some cross validation to make sure, but this might be for another time :)
+## References
