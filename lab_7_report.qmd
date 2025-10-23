@@ -15,6 +15,8 @@ bibliography: references.bib
 
 -   Manuel Charneca (s253708)
 
+# PCA analysis of Gravier dataset
+
 We do a PCA following directions of [Claus O. Wilke](https://clauswilke.com/blog/2020/09/07/pca-tidyverse-style/ "PCA tidyverse style").
 
 ## Loading Libraries
@@ -29,7 +31,9 @@ library("broom")
 
 ## Loading Gravier data
 
-We are loading the Gravier dataset, applying compression and augmentation. [@gravier2010]
+[@gravier2010] have considered small, invasive ductal carcinomas without axillary lymph node involvement (T1T2N0) to predict metastasis of small node-negative breast carcinoma. Using comparative genomic hybridization arrays, they examined 168 patients over a five-year period. The 111 patients with no event after diagnosis were labelled good, and the 57 patients with early metastasis were labelled poor.
+
+We are loading the Gravier dataset, applying compression and augmentation to include the `early_metastasis` data into one dataframe.
 
 ```{r}
 #| eval: true
@@ -80,7 +84,8 @@ The data was prepared for a Support Vector Machine analysis to determine a model
 ```{r}
 #Scaling for unity variance
 gravier_scaled <- gravier_clean_aug |>
-  mutate(across(where(is.numeric), ~ as.numeric(scale(.))))
+  mutate(across(where(is.numeric),
+                ~ as.numeric(scale(.))))
 
 # Finding split index
 ratio <- 0.75
@@ -115,25 +120,29 @@ The model was then fitted on the `training` subset.
 
 ```{r}
 svm_fit <- svm_model |>
-  fit(early_metastasis ~ ., data = gravier_train)
+  fit(early_metastasis ~ ., 
+      data = gravier_train)
 ```
 
 Finally, the fitted model was applied on the `test` dataset and the confusion matrix is plotted using `ggplot2`.
 
 ```{r}
 #Applying prediction
-svm_preds <- predict(svm_fit, gravier_test) |>
+svm_preds <- predict(svm_fit, 
+                     gravier_test) |>
   bind_cols(gravier_test)
 
 #Calculating accuracy
 svm_acc <- svm_preds |>
-  metrics(truth = early_metastasis, estimate = .pred_class) |>
+  metrics(truth = early_metastasis, 
+          estimate = .pred_class) |>
     filter(.metric == "accuracy") |>
       pull(.estimate)
 
 #Calculating confusion matrix
 svm_confusion <- svm_preds |>
-  conf_mat(truth = early_metastasis, estimate = .pred_class)
+  conf_mat(truth = early_metastasis, 
+           estimate = .pred_class)
 
 #Saving confusion matrix values to a table
 confusion <- table(Predicted = svm_preds$.pred_class, Actual = gravier_test$early_metastasis)
@@ -142,7 +151,9 @@ confusion <- table(Predicted = svm_preds$.pred_class, Actual = gravier_test$earl
 conf_df <- as.data.frame(confusion)
 
 #Plotting confusion matrix
-ggplot(conf_df, aes(x = Actual, y = Predicted, fill = Freq)) +
+ggplot(conf_df, aes(x = Actual, 
+                    y = Predicted, 
+                    fill = Freq)) +
   geom_tile() +
   geom_text(aes(label = Freq)) +
   labs(title = "Confusion Matrix - SVM",
