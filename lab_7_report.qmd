@@ -1,6 +1,8 @@
 ---
-title: "lab_7_report"
-format: html
+title: "Lab 7 Assignment: Group 22"
+format: 
+  html:
+    embed-resources: true
 editor: visual
 bibliography: references.bib
 ---
@@ -43,7 +45,7 @@ raw_dir <- "data/_raw/"
 data_file <- "gravier.RData"
 data_loc <- "https://github.com/ramhiser/datamicroarray/raw/master/data/"
 
-#Creating raw directory
+#Creating data directory
 if( !dir.exists(data) ){
   dir.create(path = data)
 }
