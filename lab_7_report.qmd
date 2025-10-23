@@ -2,20 +2,34 @@
 title: "lab_7_report"
 format: html
 editor: visual
+bibliography: references.bib
 ---
 
-# Modeling Gravier data with XGBOOST
+# Group 22, members:
 
-We do a PCA following directions of Claus O. Wilke
+-   Malte Lau (s224183)
 
-## Download/import libraries including random forest
+-   Duco Lam (252126)
+
+-   Benedek Dunavolgyi (s243161)
+
+-   Manuel Charneca (s253708)
+
+We do a PCA following directions of [Claus O. Wilke](https://clauswilke.com/blog/2020/09/07/pca-tidyverse-style/ "PCA tidyverse style").
+
+## Loading Libraries
 
 ```{r}
+#| message: false
 library("tidyverse")
 library("tidymodels")
 library("kernlab")
 library("broom")
 ```
+
+## Loading Gravier data
+
+We are loading the Gravier dataset, applying compression and augmentation. [@gravier2010]
 
 ```{r}
 #| eval: true
@@ -42,9 +56,7 @@ if( !file.exists(str_c(raw_dir, data_file)) ){
     destfile = str_c(raw_dir, data_file))
 }
 load(file = str_c(raw_dir, data_file))
-```
 
-```{r}
 #The data was cleaned and compressed with gzip
 gravier_clean <- gravier |>
   bind_cols() |>
@@ -55,56 +67,89 @@ write_tsv(gravier_clean,
 
 gravier_clean <- read_tsv(file = "data/02_gravier_clean.tsv.gz",
                           show_col_types = FALSE)
-```
-
-```{r}
 
 #Augmenting data
 gravier_clean_aug <- gravier_clean |> 
   relocate(early_metastasis = y)
+```
 
-gravier_scaled <- gravier_clean_aug %>%
+## Data Wrangling
+
+The data was prepared for a Support Vector Machine analysis to determine a model, that can predict the outcome of breast cancer on the gene levels. First, the data was scaled to unity variance, then 3/4 of the data was selected as the `training` data, while the rest is going to be used to test accuracy.
+
+```{r}
+#Scaling for unity variance
+gravier_scaled <- gravier_clean_aug |>
   mutate(across(where(is.numeric), ~ as.numeric(scale(.))))
 
-# Split
+# Finding split index
 ratio <- 0.75
 split <- as.integer(nrow(gravier_scaled) * ratio)
 
+# Splitting the data into training and test subsets
 gravier_train <- gravier_scaled[1:split, ]
 gravier_test  <- gravier_scaled[(split + 1):nrow(gravier_scaled), ]
 
-# Make target a factor
-gravier_train <- gravier_train %>%
+# Changing early_metastasis to factor values
+gravier_train <- gravier_train |>
   mutate(early_metastasis = as.factor(early_metastasis))
 
-gravier_test <- gravier_test %>%
+gravier_test <- gravier_test |>
   mutate(early_metastasis = as.factor(early_metastasis))
-
 ```
 
-```{r}
+Then, the `SVM` analysis was set up, using a polynomial vector.
 
+```{r}
 svm_spec <- svm_poly(
   mode = "classification",
   cost = tune()  
 ) %>%
   set_engine("kernlab")   
+
+svm_model <- svm_rbf(mode = "classification") |>
+  set_engine("kernlab")
 ```
 
-```{r}
-svm_model <- svm_rbf(mode = "classification") %>%
-  set_engine("kernlab")
+The model was then fitted on the `training` subset.
 
-svm_fit <- svm_model %>%
+```{r}
+svm_fit <- svm_model |>
   fit(early_metastasis ~ ., data = gravier_train)
 ```
 
+Finally, the fitted model was applied on the `test` dataset and the confusion matrix is plotted using `ggplot2`.
+
 ```{r}
-svm_preds <- predict(svm_fit, gravier_test) %>%
+#Applying prediction
+svm_preds <- predict(svm_fit, gravier_test) |>
   bind_cols(gravier_test)
-svm_preds %>%
-  metrics(truth = early_metastasis, estimate = .pred_class)
-svm_preds %>%
+
+#Calculating accuracy
+svm_acc <- svm_preds |>
+  metrics(truth = early_metastasis, estimate = .pred_class) |>
+    filter(.metric == "accuracy") |>
+      pull(.estimate)
+
+#Calculating confusion matrix
+svm_confusion <- svm_preds |>
   conf_mat(truth = early_metastasis, estimate = .pred_class)
 
+#Saving confusion matrix values to a table
+confusion <- table(Predicted = svm_preds$.pred_class, Actual = gravier_test$early_metastasis)
+
+# Convert to tidy format and plot
+conf_df <- as.data.frame(confusion)
+
+#Plotting confusion matrix
+ggplot(conf_df, aes(x = Actual, y = Predicted, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = Freq)) +
+  labs(title = "Confusion Matrix - SVM",
+       caption = paste("Accuracy:", round(svm_acc,3)))
+  
 ```
+
+The confusion matrix shows that the model correctly classified most of the “good” samples but has a higher error with the “poor” ones. This imbalance is likely due to the different distribution of “good” and “poor” labels between the training and testing sets.
+
+## References
